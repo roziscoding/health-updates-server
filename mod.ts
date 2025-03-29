@@ -1,0 +1,217 @@
+import { Hono } from "@hono/hono";
+import { cors } from "@hono/hono/cors";
+import * as webpush from "@negrel/webpush";
+import { encodeBase64Url } from "@std/encoding/base64url";
+import { z } from "zod";
+const app = new Hono();
+app.use(cors());
+
+const META = ["meta"];
+const SUBSCRIPTIONS = ["subscriptions"];
+const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
+
+const Subscription = z.object({
+  endpoint: z.string(),
+  expirationTime: z.string().nullable(),
+  keys: z.object({ p256dh: z.string(), auth: z.string() }),
+});
+type Subscription = z.infer<typeof Subscription>;
+
+const NotificationEvent = z.object({
+  type: z.literal("notification"),
+  title: z.string(),
+  message: z.string(),
+  tag: z.string(),
+
+  subscription: Subscription,
+});
+type NotificationEvent = z.infer<typeof NotificationEvent>;
+
+const DeleteSubscriptionEvent = z.object({
+  type: z.literal("delete-subscription"),
+  key: z.string(),
+});
+type DeleteSubscriptionEvent = z.infer<typeof DeleteSubscriptionEvent>;
+
+const Post = z.object({
+  cid: z.string(),
+  record: z.object({
+    createdAt: z.string().transform((value) => new Date(value)),
+    text: z.string(),
+  }),
+});
+type Post = z.infer<typeof Post>;
+
+const VAPID_KEYS_ENV = Deno.env.get("VAPID");
+if (!VAPID_KEYS_ENV) {
+  throw new Error("Missing VAPID environment variable");
+}
+
+const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL");
+if (!ADMIN_EMAIL) {
+  throw new Error("Missing ADMIN_EMAIL environment variable");
+}
+
+const DEV_KEY = Deno.env.get("DEV_KEY");
+if (!DEV_KEY) {
+  console.debug("Dev key not set. Manual push disabled.");
+}
+
+const BSKY_URL = Deno.env.get("BSKY_URL");
+if (!BSKY_URL) {
+  throw new Error("Missing BSKY_URL environment variable");
+}
+
+const exportedVapidKeys = JSON.parse(VAPID_KEYS_ENV);
+const vapidKeys = await webpush.importVapidKeys(exportedVapidKeys, {
+  extractable: false,
+});
+
+const appServer = await webpush.ApplicationServer.new({
+  contactInformation: `mailto:${ADMIN_EMAIL}`,
+  vapidKeys,
+});
+
+const kv = await Deno.openKv();
+
+async function broadcast(title: string, message: string, tag: string = crypto.randomUUID()) {
+  const subscriptions = kv.list<Subscription>({ prefix: SUBSCRIPTIONS });
+  let enqueued = 0;
+
+  for await (const subscription of subscriptions) {
+    kv.enqueue(
+      {
+        type: "notification",
+        title: title,
+        message: message,
+        tag,
+        subscription: subscription.value,
+      } satisfies NotificationEvent,
+    );
+    enqueued++;
+  }
+
+  return enqueued;
+}
+
+function enrichPost(post: Post): Post & { count?: number } {
+  const count = post.record.text.match(/lkpc:(?<count>\d+)/)?.groups?.count;
+
+  return {
+    ...post,
+    record: {
+      ...post.record,
+      text: post.record.text.replace("#healthUpdate", "").replace(/lkpc:\d+/, ""),
+    },
+    count: count ? Number(count) : undefined,
+  };
+}
+
+async function fetchPosts(force = false, noTag = false) {
+  const posts = await fetch(BSKY_URL!)
+    .then((response) => response.json())
+    .then(z.object({ posts: z.array(Post) }).safeParse)
+    .then(({ success, error, data }) => {
+      if (!success) {
+        throw new Error(`Invalid response from bluesky server: ${error}`);
+      }
+
+      console.log("Fetched successfully");
+      return data.posts.sort((a, b) => b.record.createdAt.getTime() - a.record.createdAt.getTime());
+    });
+
+  const latestPost = enrichPost(posts[0]);
+  const latestKnownPostDate = await kv.get<number>(LATEST_KNOWN_POST_DATE).then((value) => value?.value);
+
+  if (!force && latestKnownPostDate && latestPost.record.createdAt.getTime() <= latestKnownPostDate) {
+    return;
+  }
+
+  await kv.set(LATEST_KNOWN_POST_DATE, latestPost.record.createdAt.getTime());
+
+  const title = `Update do roz${latestPost.count ? ` - ${latestPost.count}k plaquetas` : ""}`;
+
+  return await broadcast(title, latestPost.record.text, noTag ? undefined : latestPost.cid);
+}
+
+app.use(async (c, next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  console.log(`[${c.req.method}] ${c.req.url} - ${c.res.status} (${ms}ms)`);
+});
+
+app.get("/vapidPublicKey", async (c) => {
+  const publicKey = encodeBase64Url(
+    await crypto.subtle.exportKey(
+      "raw",
+      vapidKeys.publicKey,
+    ),
+  );
+
+  return c.text(publicKey);
+});
+
+app.post("/", async (c) => {
+  const subscription = await c.req.json().then((json) => Subscription.parse(json.subscription));
+  await kv.set([...SUBSCRIPTIONS, subscription.keys.auth], subscription);
+
+  return c.json({
+    success: true,
+  });
+});
+
+app.delete("/", async (c) => {
+  const subscription = await c.req.json().then((json) => Subscription.parse(json.subscription));
+  await kv.delete([...SUBSCRIPTIONS, subscription.keys.auth]);
+
+  return c.json({
+    success: true,
+  });
+});
+
+app.put("/", async (c) => {
+  const body = await c.req.json();
+
+  if (!body.key || body.key !== DEV_KEY) return new Response(null, { status: 401 });
+
+  const enqueued = await fetchPosts(true, true);
+
+  return c.json({ ok: true, enqueued: enqueued });
+});
+
+kv.listenQueue(async (event) => {
+  const { success, data } = NotificationEvent.safeParse(event);
+
+  if (!success) return;
+
+  const subscriber = appServer.subscribe(data.subscription);
+
+  await subscriber.pushTextMessage(JSON.stringify({ title: data.title, message: data.message, tag: data.tag }), {})
+    .catch(() =>
+      kv.enqueue(
+        {
+          type: "delete-subscription",
+          key: data.subscription.keys.auth,
+        } satisfies DeleteSubscriptionEvent,
+      )
+    );
+});
+
+kv.listenQueue(async (event) => {
+  const { success, data } = DeleteSubscriptionEvent.safeParse(event);
+
+  if (!success) return;
+
+  await kv.delete([...SUBSCRIPTIONS, data.key]);
+});
+
+Deno.cron("check-for-updates", "*/1 * * * *", fetchPosts);
+
+Deno.serve({
+  port: 8080,
+
+  onListen({ port }) {
+    console.log(`Server is running on port ${port}`);
+  },
+}, app.fetch);

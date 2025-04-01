@@ -8,6 +8,7 @@ app.use(cors());
 
 const META = ["meta"];
 const SUBSCRIPTIONS = ["subscriptions"];
+const LIKES = ["likes"];
 const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
 
 const Subscription = z.object({
@@ -178,6 +179,89 @@ app.put("/", async (c) => {
   const enqueued = await fetchPosts(true, true);
 
   return c.json({ ok: true, enqueued: enqueued });
+});
+
+app.post("/:postId/likes", async (c) => {
+  const postId = c.req.param("postId");
+  if (!postId) {
+    return c.json({ ok: false, status: 422, error: "missing postId" }, { status: 422 });
+  }
+  const key = [...LIKES, postId];
+
+  let success = false;
+  let attempts = 0;
+
+  while (!success && attempts < 4) {
+    const previousValue = await kv.get<number>(key);
+
+    const result = await kv.atomic()
+      .check({
+        key,
+        versionstamp: previousValue.versionstamp,
+      })
+      .mutate({
+        type: "set",
+        key,
+        value: (previousValue.value ?? 0) + 1,
+      })
+      .commit();
+
+    success = result.ok;
+    attempts++;
+  }
+
+  const count = await kv.get<number>(key);
+
+  return c.json({ ok: success, count: Number(count.value) ?? 0 });
+});
+
+app.delete("/:postId/likes", async (c) => {
+  const postId = c.req.param("postId");
+
+  if (!postId) {
+    return c.json({ ok: false, status: 422, error: "missing postId" }, { status: 422 });
+  }
+
+  const key = [...LIKES, postId];
+
+  let success = false;
+  let attempts = 0;
+
+  while (!success && attempts < 4) {
+    const previousValue = await kv.get<number>(key);
+
+    if (!previousValue.value) return c.json({ ok: true, count: 0 });
+
+    const result = await kv.atomic()
+      .check({
+        key,
+        versionstamp: previousValue.versionstamp,
+      })
+      .mutate({
+        type: "set",
+        key,
+        value: previousValue.value - 1,
+      })
+      .commit();
+
+    success = result.ok;
+    attempts++;
+  }
+
+  const count = await kv.get<number>(key);
+
+  return c.json({ ok: success, count: count.value ?? 0 });
+});
+
+app.get("/likes", async (c) => {
+  const likes: Record<string, number> = {};
+
+  for await (const { key, value } of kv.list<number>({ prefix: LIKES })) {
+    const [_, postId] = key;
+    likes[String(postId)] = value;
+  }
+
+  return c.json({ likes });
 });
 
 kv.listenQueue(async (event) => {

@@ -1,7 +1,12 @@
 {
   "fmt": {
     "lineWidth": 120,
-    "exclude": ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.vscode/**"]
+    "exclude": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.vscode/**"
+    ]
   },
   "imports": {
     "@hono/hono": "jsr:@hono/hono@^4.7.5",
@@ -20,10 +25,19 @@
     "dev": {
       "command": "deno run -A --unstable-kv --unstable-cron --watch mod.ts"
     },
-    "dev:kv:local": "deno run -A --unstable-kv kv.ts"
+    "dev:kv:local": "deno run -A --unstable-kv kv.ts",
+    "dev:kv:remote": "deno run -A --unstable-kv --env-file kv.ts"
   },
   "compilerOptions": {
     "jsx": "react-jsx",
     "jsxImportSource": "preact"
+  },
+  "deploy": {
+    "project": "4bce34a2-ef97-47f2-90af-0baccb28848d",
+    "exclude": [
+      "**/node_modules"
+    ],
+    "include": [],
+    "entrypoint": "mod.ts"
   }
 }

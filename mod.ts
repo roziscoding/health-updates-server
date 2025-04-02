@@ -13,7 +13,7 @@ const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
 
 const Subscription = z.object({
   endpoint: z.string(),
-  expirationTime: z.string().nullable(),
+  expirationTime: z.string().nullable().optional(),
   keys: z.object({ p256dh: z.string(), auth: z.string() }),
 });
 type Subscription = z.infer<typeof Subscription>;

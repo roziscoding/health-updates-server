@@ -290,7 +290,9 @@ kv.listenQueue(async (event) => {
   await kv.delete([...SUBSCRIPTIONS, data.key]);
 });
 
-Deno.cron("check-for-updates", "*/1 * * * *", fetchPosts);
+Deno.cron("check-for-updates", "*/1 * * * *", async () => {
+  await fetchPosts();
+});
 
 Deno.serve({
   port: 8080,

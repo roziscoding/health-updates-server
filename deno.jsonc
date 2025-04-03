@@ -26,7 +26,8 @@
       "command": "deno run -A --unstable-kv --unstable-cron --watch mod.ts"
     },
     "dev:kv:local": "deno run -A --unstable-kv kv.ts",
-    "dev:kv:remote": "deno run -A --unstable-kv --env-file kv.ts"
+    "dev:kv:remote": "deno run -A --unstable-kv --env-file kv.ts",
+    "ok": "deno check mod.ts && deno lint --fix && deno fmt"
   },
   "compilerOptions": {
     "jsx": "react-jsx",

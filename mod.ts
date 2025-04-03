@@ -240,11 +240,11 @@ app.post("/:postId/likes", async (c) => {
     attempts++;
   }
 
-  const count = await kv.get<number>(key);
+  const count = await kv.get<number>(key).then((count) => Number(count.value ?? 0));
 
-  await sendTelegramMessage(`New like on https://roz.ninja/updates/${postId}`);
+  await sendTelegramMessage(`New like on https://roz.ninja/updates/${postId}. ${count} total likes`);
 
-  return c.json({ ok: success, count: Number(count.value) ?? 0 });
+  return c.json({ ok: success, count });
 });
 
 app.delete("/:postId/likes", async (c) => {

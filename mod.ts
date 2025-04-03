@@ -63,6 +63,27 @@ if (!BSKY_URL) {
   throw new Error("Missing BSKY_URL environment variable");
 }
 
+const BOT_TOKEN = Deno.env.get("BOT_TOKEN");
+const NOTIFICATION_CHAT_ID = Deno.env.get("NOTIFICATION_CHAT_ID");
+
+const ENABLE_TELEGRAM_UPDATES = BOT_TOKEN && NOTIFICATION_CHAT_ID;
+
+async function sendTelegramMessage(text: string) {
+  if (!ENABLE_TELEGRAM_UPDATES) return;
+
+  const url = new URL(`https://api.telegram.org/bot/${BOT_TOKEN}/sendMessage`);
+  url.searchParams.set("chat_id", NOTIFICATION_CHAT_ID);
+  url.searchParams.set("text", text);
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Error sending telegram notification: ${await response.text}`);
+    console.log(`Sent telegram notification with "${text}": ${await response.json()}`);
+  } catch (err) {
+    console.error(`Error sending telegram notification with text "${text}": ${err}`);
+  }
+}
+
 const exportedVapidKeys = JSON.parse(VAPID_KEYS_ENV);
 const vapidKeys = await webpush.importVapidKeys(exportedVapidKeys, {
   extractable: false,
@@ -92,6 +113,8 @@ async function broadcast(title: string, message: string, tag: string = crypto.ra
     enqueued++;
   }
 
+  await sendTelegramMessage(`Broadcasted ${title} for ${enqueued} subscribers`);
+
   return enqueued;
 }
 
@@ -119,10 +142,11 @@ async function fetchPosts(force = false, noTag = false) {
 
       console.log("Fetched successfully");
       return data.posts.sort((a, b) => b.record.createdAt.getTime() - a.record.createdAt.getTime());
-    });
+    })
+    .then((posts) => posts.map(enrichPost));
 
-  const latestPost = enrichPost(posts[0]);
   const latestKnownPostDate = await kv.get<number>(LATEST_KNOWN_POST_DATE).then((value) => value?.value);
+  const latestPost = posts[0];
 
   if (!force && latestKnownPostDate && latestPost.record.createdAt.getTime() <= latestKnownPostDate) {
     return;
@@ -130,9 +154,15 @@ async function fetchPosts(force = false, noTag = false) {
 
   await kv.set(LATEST_KNOWN_POST_DATE, latestPost.record.createdAt.getTime());
 
-  const title = `Update do roz${latestPost.count ? ` - ${latestPost.count}k plaquetas` : ""}`;
+  const postsSinceLastPostDate = posts.filter((post) => post.record.createdAt.getTime() > (latestKnownPostDate ?? 0));
 
-  return await broadcast(title, latestPost.record.text, noTag ? undefined : latestPost.cid);
+  await sendTelegramMessage(`Found ${postsSinceLastPostDate.length} new posts. Broadcasting`);
+
+  for (const post of postsSinceLastPostDate) {
+    const title = `Update do roz${post.count ? ` - ${post.count}k plaquetas` : ""}`;
+
+    return await broadcast(title, post.record.text, noTag ? undefined : post.cid);
+  }
 }
 
 app.use(async (c, next) => {
@@ -212,6 +242,8 @@ app.post("/:postId/likes", async (c) => {
 
   const count = await kv.get<number>(key);
 
+  await sendTelegramMessage(`New like on https://roz.ninja/updates/${postId}`);
+
   return c.json({ ok: success, count: Number(count.value) ?? 0 });
 });
 
@@ -272,13 +304,16 @@ kv.listenQueue(async (event) => {
   const subscriber = appServer.subscribe(data.subscription);
 
   await subscriber.pushTextMessage(JSON.stringify({ title: data.title, message: data.message, tag: data.tag }), {})
-    .catch(() =>
-      kv.enqueue(
+    .catch(async (err) => {
+      console.error(`Error sending ${data.title} to ${data.subscription.keys.auth}: ${err}`);
+      await kv.enqueue(
         {
           type: "delete-subscription",
           key: data.subscription.keys.auth,
         } satisfies DeleteSubscriptionEvent,
-      )
+      );
+    }).then(() =>
+      console.log(`Sent push notification with title ${data.title} to subscriber ${data.subscription.keys.auth}`)
     );
 });
 
@@ -288,6 +323,7 @@ kv.listenQueue(async (event) => {
   if (!success) return;
 
   await kv.delete([...SUBSCRIPTIONS, data.key]);
+  await sendTelegramMessage(`Deleted subscription`);
 });
 
 Deno.cron("check-for-updates", "*/1 * * * *", async () => {

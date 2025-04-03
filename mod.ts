@@ -10,6 +10,8 @@ const META = ["meta"];
 const SUBSCRIPTIONS = ["subscriptions"];
 const LIKES = ["likes"];
 const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
+const EMOJI_REGEX =
+  /([\u2700-\u27BF\uE000-\uF8FF\u2011-\u26FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDD10-\uDDFF])/g;
 
 const Subscription = z.object({
   endpoint: z.string(),
@@ -34,13 +36,32 @@ const DeleteSubscriptionEvent = z.object({
 });
 type DeleteSubscriptionEvent = z.infer<typeof DeleteSubscriptionEvent>;
 
+const Image = z.object({
+  alt: z.string().optional(),
+  thumb: z.string(),
+  fullsize: z.string(),
+  aspectRatio: z.object({
+    height: z.number(),
+    width: z.number(),
+  }),
+});
+
 const Post = z.object({
-  cid: z.string(),
+  uri: z.string(),
   record: z.object({
     createdAt: z.string().transform((value) => new Date(value)),
     text: z.string(),
   }),
+  embed: z
+    .object({
+      images: z.array(Image).optional(),
+      media: z.object({
+        images: z.array(Image),
+      }),
+    })
+    .optional(),
 });
+
 type Post = z.infer<typeof Post>;
 
 const VAPID_KEYS_ENV = Deno.env.get("VAPID");
@@ -118,14 +139,26 @@ async function broadcast(title: string, message: string, tag: string = crypto.ra
   return enqueued;
 }
 
-function enrichPost(post: Post): Post & { count?: number } {
+function srtipPatterns(str: string, patterns: Array<RegExp | string>) {
+  return patterns.reduce((result, pattern) => (result as string).replace(pattern, ""), str) as string;
+}
+
+export function enrichPost(post: Post) {
+  if (!post) {
+    return post;
+  }
   const count = post.record.text.match(/lkpc:(?<count>\d+)/)?.groups?.count;
 
   return {
     ...post,
+    recordId: post.uri.split("/").pop()!,
     record: {
       ...post.record,
-      text: post.record.text.replace("#healthUpdate", "").replace(/lkpc:\d+/, ""),
+      createdAt: new Date(post.record.createdAt),
+      text: srtipPatterns(
+        post.record.text,
+        ["#healthUpdate", /lkpc:\d+/, EMOJI_REGEX],
+      ),
     },
     count: count ? Number(count) : undefined,
   };
@@ -161,7 +194,7 @@ async function fetchPosts(force = false, noTag = false) {
   for (const post of postsSinceLastPostDate) {
     const title = `Update do roz${post.count ? ` - ${post.count}k plaquetas` : ""}`;
 
-    return await broadcast(title, post.record.text, noTag ? undefined : post.cid);
+    return await broadcast(title, post.record.text, noTag ? undefined : post.recordId);
   }
 }
 

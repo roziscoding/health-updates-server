@@ -71,7 +71,7 @@ const ENABLE_TELEGRAM_UPDATES = BOT_TOKEN && NOTIFICATION_CHAT_ID;
 async function sendTelegramMessage(text: string) {
   if (!ENABLE_TELEGRAM_UPDATES) return;
 
-  const url = new URL(`https://api.telegram.org/bot/${BOT_TOKEN}/sendMessage`);
+  const url = new URL(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`);
   url.searchParams.set("chat_id", NOTIFICATION_CHAT_ID);
   url.searchParams.set("text", text);
 

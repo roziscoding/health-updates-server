@@ -77,8 +77,8 @@ async function sendTelegramMessage(text: string) {
 
   try {
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Error sending telegram notification: ${await response.text}`);
-    console.log(`Sent telegram notification with "${text}": ${await response.json()}`);
+    if (!response.ok) throw new Error(`Error sending telegram notification: ${await response.text()}`);
+    console.log(`Sent telegram notification with "${text}": ${JSON.stringify(await response.json())}`);
   } catch (err) {
     console.error(`Error sending telegram notification with text "${text}": ${err}`);
   }

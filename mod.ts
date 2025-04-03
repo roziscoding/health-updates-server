@@ -113,7 +113,7 @@ async function broadcast(title: string, message: string, tag: string = crypto.ra
     enqueued++;
   }
 
-  await sendTelegramMessage(`Broadcasted ${title} for ${enqueued} subscribers`);
+  await sendTelegramMessage(`Broadcasted https://roz.ninja/updates/${tag} for ${enqueued} subscribers`);
 
   return enqueued;
 }

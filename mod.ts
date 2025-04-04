@@ -358,6 +358,8 @@ Deno.cron("update-like-summary", "0 */1 * * *", async () => {
   const diff = currentLikeCount - previousLikeCount;
 
   await sendTelegramMessage(`${Math.abs(diff)} ${diff < 0 ? "less" : "new"} likes since last hour`);
+
+  await kv.set(LATEST_LIKES_COUNT, currentLikeCount);
 });
 
 Deno.serve({

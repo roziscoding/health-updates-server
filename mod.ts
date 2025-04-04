@@ -355,9 +355,9 @@ Deno.cron("update-like-summary", "0 */1 * * *", async () => {
     currentLikeCount += like.value;
   }
 
-  const diff = previousLikeCount - currentLikeCount;
+  const diff = currentLikeCount - previousLikeCount;
 
-  await sendTelegramMessage(`${diff} ${diff < 0 ? "less" : "new"} likes since last hour`);
+  await sendTelegramMessage(`${Math.abs(diff)} ${diff < 0 ? "less" : "new"} likes since last hour`);
 });
 
 Deno.serve({

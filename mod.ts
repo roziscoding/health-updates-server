@@ -348,21 +348,21 @@ Deno.cron("check-for-updates", "*/1 * * * *", async () => {
   await fetchPosts();
 });
 
-Deno.cron("update-like-summary", "0 */1 * * *", async () => {
-  const previousLikeCount = await kv.get<number>(LATEST_LIKES_COUNT).then((entry) => entry.value ?? 0);
-  const likes = kv.list<number>({ prefix: LIKES });
-  let currentLikeCount = 0;
+// Deno.cron("update-like-summary", "0 */1 * * *", async () => {
+//   const previousLikeCount = await kv.get<number>(LATEST_LIKES_COUNT).then((entry) => entry.value ?? 0);
+//   const likes = kv.list<number>({ prefix: LIKES });
+//   let currentLikeCount = 0;
 
-  for await (const like of likes) {
-    currentLikeCount += like.value;
-  }
+//   for await (const like of likes) {
+//     currentLikeCount += like.value;
+//   }
 
-  const diff = currentLikeCount - previousLikeCount;
+//   const diff = currentLikeCount - previousLikeCount;
 
-  await sendTelegramMessage(`${Math.abs(diff)} ${diff < 0 ? "less" : "new"} likes since last hour`);
+//   await sendTelegramMessage(`${Math.abs(diff)} ${diff < 0 ? "less" : "new"} likes since last hour`);
 
-  await kv.set(LATEST_LIKES_COUNT, currentLikeCount);
-});
+//   await kv.set(LATEST_LIKES_COUNT, currentLikeCount);
+// });
 
 Deno.serve({
   port: 8080,

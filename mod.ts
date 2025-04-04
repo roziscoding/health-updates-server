@@ -7,9 +7,12 @@ const app = new Hono();
 app.use(cors());
 
 const META = ["meta"];
+const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
+const LATEST_LIKES_COUNT = [...META, "latestLikeCount"];
+
 const SUBSCRIPTIONS = ["subscriptions"];
 const LIKES = ["likes"];
-const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
+
 const EMOJI_REGEX =
   /([\u2700-\u27BF\uE000-\uF8FF\u2011-\u26FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDD10-\uDDFF])/g;
 
@@ -275,8 +278,6 @@ app.post("/:postId/likes", async (c) => {
 
   const count = await kv.get<number>(key).then((count) => Number(count.value ?? 0));
 
-  await sendTelegramMessage(`New like on https://roz.ninja/updates/${postId}. ${count} total likes`);
-
   return c.json({ ok: success, count });
 });
 
@@ -356,11 +357,25 @@ kv.listenQueue(async (event) => {
   if (!success) return;
 
   await kv.delete([...SUBSCRIPTIONS, data.key]);
-  await sendTelegramMessage(`Deleted subscription`);
+  console.log(`Completed deletion of subscription ${data.key}`);
 });
 
 Deno.cron("check-for-updates", "*/1 * * * *", async () => {
   await fetchPosts();
+});
+
+Deno.cron("update-like-summary", "0 */1 * * *", async () => {
+  const previousLikeCount = await kv.get<number>(LATEST_LIKES_COUNT).then((entry) => entry.value ?? 0);
+  const likes = kv.list<number>({ prefix: LIKES });
+  let currentLikeCount = 0;
+
+  for await (const like of likes) {
+    currentLikeCount += like.value;
+  }
+
+  const diff = previousLikeCount - currentLikeCount;
+
+  await sendTelegramMessage(`${diff} ${diff < 0 ? "less" : "new"} likes since last hour`);
 });
 
 Deno.serve({

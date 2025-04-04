@@ -39,30 +39,12 @@ const DeleteSubscriptionEvent = z.object({
 });
 type DeleteSubscriptionEvent = z.infer<typeof DeleteSubscriptionEvent>;
 
-const Image = z.object({
-  alt: z.string().optional(),
-  thumb: z.string(),
-  fullsize: z.string(),
-  aspectRatio: z.object({
-    height: z.number(),
-    width: z.number(),
-  }),
-});
-
 const Post = z.object({
   uri: z.string(),
   record: z.object({
     createdAt: z.string().transform((value) => new Date(value)),
     text: z.string(),
   }),
-  embed: z
-    .object({
-      images: z.array(Image).optional(),
-      media: z.object({
-        images: z.array(Image),
-      }),
-    })
-    .optional(),
 });
 
 type Post = z.infer<typeof Post>;

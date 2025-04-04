@@ -8,7 +8,7 @@ app.use(cors());
 
 const META = ["meta"];
 const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
-const LATEST_LIKES_COUNT = [...META, "latestLikeCount"];
+const UNDELIVERED_NOTIFICATION = [...META, "undelivered"];
 
 const SUBSCRIPTIONS = ["subscriptions"];
 const LIKES = ["likes"];
@@ -115,11 +115,14 @@ async function broadcast(title: string, message: string, tag: string = crypto.ra
         tag,
         subscription: subscription.value,
       } satisfies NotificationEvent,
+      {
+        keysIfUndelivered: [[...UNDELIVERED_NOTIFICATION, tag, subscription.value.endpoint]],
+      },
     );
     enqueued++;
   }
 
-  await sendTelegramMessage(`Broadcasted https://roz.ninja/updates/${tag} for ${enqueued} subscribers`);
+  await sendTelegramMessage(`Enqueued broadcast of https://roz.ninja/updates/${tag} for ${enqueued} subscribers`);
 
   return enqueued;
 }
@@ -184,6 +187,8 @@ async function fetchPosts(force = false, noTag = false) {
 }
 
 app.use(async (c, next) => {
+  if (!Deno.env.get("DEBUG")) return next();
+
   const start = Date.now();
   await next();
   const ms = Date.now() - start;
@@ -347,22 +352,6 @@ kv.listenQueue(async (event) => {
 Deno.cron("check-for-updates", "*/1 * * * *", async () => {
   await fetchPosts();
 });
-
-// Deno.cron("update-like-summary", "0 */1 * * *", async () => {
-//   const previousLikeCount = await kv.get<number>(LATEST_LIKES_COUNT).then((entry) => entry.value ?? 0);
-//   const likes = kv.list<number>({ prefix: LIKES });
-//   let currentLikeCount = 0;
-
-//   for await (const like of likes) {
-//     currentLikeCount += like.value;
-//   }
-
-//   const diff = currentLikeCount - previousLikeCount;
-
-//   await sendTelegramMessage(`${Math.abs(diff)} ${diff < 0 ? "less" : "new"} likes since last hour`);
-
-//   await kv.set(LATEST_LIKES_COUNT, currentLikeCount);
-// });
 
 Deno.serve({
   port: 8080,

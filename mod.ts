@@ -312,6 +312,8 @@ app.get("/likes", async (c) => {
   return c.json({ likes });
 });
 
+app.get("/", (c) => c.redirect("https://roz.ninja/updates", 301));
+
 kv.listenQueue(async (event) => {
   const { success, data } = NotificationEvent.safeParse(event);
 

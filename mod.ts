@@ -69,6 +69,8 @@ if (!BSKY_URL) {
   throw new Error("Missing BSKY_URL environment variable");
 }
 
+const DEBUG = Deno.env.get("DEBUG");
+
 const BOT_TOKEN = Deno.env.get("BOT_TOKEN");
 const NOTIFICATION_CHAT_ID = Deno.env.get("NOTIFICATION_CHAT_ID");
 
@@ -187,7 +189,7 @@ async function fetchPosts(force = false, noTag = false) {
 }
 
 app.use(async (c, next) => {
-  if (!Deno.env.get("DEBUG")) return next();
+  if (!DEBUG) return next();
 
   const start = Date.now();
   await next();
@@ -357,6 +359,6 @@ Deno.serve({
   port: 8080,
 
   onListen({ port }) {
-    console.log(`Server is running on port ${port}`);
+    if (DEBUG) console.log(`Server is running on port ${port}`);
   },
 }, app.fetch);

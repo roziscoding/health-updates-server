@@ -8,7 +8,8 @@ app.use(cors());
 
 const META = ["meta"];
 const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
-const UNDELIVERED_NOTIFICATION = [...META, "undelivered"];
+const UNDELIVERED_NOTIFICATION = [...META, "queue", "undelivered"];
+const SENT_NOTIFICATION = [...META, "notifications", "sent"];
 
 const SUBSCRIPTIONS = ["subscriptions"];
 const LIKES = ["likes"];
@@ -337,6 +338,12 @@ kv.listenQueue(async (event) => {
           key: data.subscription.keys.auth,
         } satisfies DeleteSubscriptionEvent,
       );
+    }).then(async () => {
+      const key = [...SENT_NOTIFICATION, data.tag];
+
+      await kv.atomic()
+        .sum(key, 1n)
+        .commit();
     }).then(() =>
       console.log(`Sent push notification with title ${data.title} to subscriber ${data.subscription.keys.auth}`)
     );

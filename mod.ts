@@ -74,14 +74,15 @@ const DEBUG = Deno.env.get("DEBUG");
 
 const BOT_TOKEN = Deno.env.get("BOT_TOKEN");
 const NOTIFICATION_CHAT_ID = Deno.env.get("NOTIFICATION_CHAT_ID");
+const BROADCAST_CHAT_ID = Deno.env.get("BROADCAST_CHAT_ID") ?? NOTIFICATION_CHAT_ID;
 
 const ENABLE_TELEGRAM_UPDATES = BOT_TOKEN && NOTIFICATION_CHAT_ID;
 
-async function sendTelegramMessage(text: string) {
+async function sendTelegramMessage(text: string, admin = true) {
   if (!ENABLE_TELEGRAM_UPDATES) return;
 
   const url = new URL(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`);
-  url.searchParams.set("chat_id", NOTIFICATION_CHAT_ID);
+  url.searchParams.set("chat_id", admin ? NOTIFICATION_CHAT_ID : (BROADCAST_CHAT_ID ?? NOTIFICATION_CHAT_ID));
   url.searchParams.set("text", text);
 
   try {
@@ -185,6 +186,7 @@ async function fetchPosts(force = false, noTag = false) {
   for (const post of postsSinceLastPostDate) {
     const title = `Update do roz${post.count ? ` - ${post.count}k plaquetas` : ""}`;
 
+    await sendTelegramMessage(`https://roz.ninja/updates/${post.recordId}`, false);
     return await broadcast(title, post.record.text, noTag ? undefined : post.recordId);
   }
 }

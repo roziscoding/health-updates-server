@@ -325,7 +325,7 @@ app.get("/likes", async (c) => {
 
 app.get("/", (c) => c.redirect("https://roz.ninja/updates", 301));
 
-kv.listenQueue(async (event) => {
+async function processBroadcast(event: unknown) {
   const { success, data } = NotificationEvent.safeParse(event);
 
   if (!success) return;
@@ -354,15 +354,20 @@ kv.listenQueue(async (event) => {
     }).then(() =>
       console.log(`Sent push notification with title ${data.title} to subscriber ${data.subscription.keys.auth}`)
     );
-});
+}
 
-kv.listenQueue(async (event) => {
+async function deleteSubscription(event: unknown) {
   const { success, data } = DeleteSubscriptionEvent.safeParse(event);
 
   if (!success) return;
 
   await kv.delete([...SUBSCRIPTIONS, data.key]);
   console.log(`Completed deletion of subscription ${data.key}`);
+}
+
+kv.listenQueue(async (event) => {
+  await processBroadcast(event);
+  await deleteSubscription(event);
 });
 
 Deno.cron("check-for-updates", "*/1 * * * *", async () => {

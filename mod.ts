@@ -10,6 +10,7 @@ const META = ["meta"];
 const LATEST_KNOWN_POST_DATE = [...META, "latestKnownPostDate"];
 const UNDELIVERED_NOTIFICATION = [...META, "queue", "undelivered"];
 const SENT_NOTIFICATION = [...META, "notifications", "sent"];
+const FAILED_NOTIFICATION = [...META, "notifications", "failed"];
 
 const SUBSCRIPTIONS = ["subscriptions"];
 const LIKES = ["likes"];
@@ -334,6 +335,10 @@ kv.listenQueue(async (event) => {
   await subscriber.pushTextMessage(JSON.stringify({ title: data.title, message: data.message, tag: data.tag }), {})
     .catch(async (err) => {
       console.error(`Error sending ${data.title} to ${data.subscription.keys.auth}: ${err}`);
+      const key = [...FAILED_NOTIFICATION, data.tag];
+      await kv.atomic()
+        .sum(key, 1n)
+        .commit();
       await kv.enqueue(
         {
           type: "delete-subscription",

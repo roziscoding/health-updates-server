@@ -184,7 +184,11 @@ async function fetchPosts(force = false, noTag = false) {
 
   const postsSinceLastPostDate = posts.filter((post) => post.record.createdAt.getTime() > (latestKnownPostDate ?? 0));
 
-  await sendTelegramMessage(`Found ${postsSinceLastPostDate.length} new posts. Broadcasting`);
+  const message = postsSinceLastPostDate.length
+    ? `Found ${postsSinceLastPostDate.length} new posts. Broadcasting.`
+    : "No new posts found";
+
+  await sendTelegramMessage(message);
 
   for (const post of postsSinceLastPostDate) {
     const title = `Update do roz${post.count ? ` - ${post.count}k plaquetas` : ""}`;
@@ -378,9 +382,9 @@ kv.listenQueue(async (event) => {
   await deleteSubscription(event);
 });
 
-Deno.cron("check-for-updates", "*/1 * * * *", async () => {
-  await fetchPosts();
-});
+// Deno.cron("check-for-updates", "*/1 * * * *", async () => {
+//   await fetchPosts();
+// });
 
 Deno.serve({
   port: 8080,

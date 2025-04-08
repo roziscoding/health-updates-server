@@ -2,7 +2,9 @@ import { Hono } from "@hono/hono";
 import { cors } from "@hono/hono/cors";
 import * as webpush from "@negrel/webpush";
 import { encodeBase64Url } from "@std/encoding/base64url";
+import { webhookCallback } from "grammy/mod.ts";
 import { z } from "zod";
+import { useBot } from "./bot.ts";
 const app = new Hono();
 app.use(cors());
 
@@ -190,6 +192,12 @@ async function fetchPosts(force = false, noTag = false) {
     await sendTelegramMessage(`https://roz.ninja/updates/${post.recordId}`, false);
     return await broadcast(title, post.record.text, noTag ? undefined : post.recordId);
   }
+}
+
+if (ENABLE_TELEGRAM_UPDATES) {
+  const bot = useBot(BOT_TOKEN, Number(NOTIFICATION_CHAT_ID), fetchPosts);
+
+  app.use("/bot", webhookCallback(bot, "hono", { secretToken: BOT_TOKEN.replace(":", "") }));
 }
 
 app.use(async (c, next) => {
